@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jin's Browser</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        .header {
+            padding: 10px;
+            background-color: #cbcbcb;
+            border-bottom: 1px solid #ddd;
+            margin: 0;
+            width: 100%;
+            box-sizing: border-box;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            position: relative;
+            z-index: 10;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        /* 左側檔案選擇 */
+        .file-input {
+            display: flex;
+            align-items: center;
+            flex: 1; /* 分配空間比例 */
+        }
+        /* 中間導航區域 - 保證真正置中 */
+        .navigation {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            justify-content: center;
+            flex: 3; /* 分配更多空間給導航區域 */
+            text-align: center; /* 確保文字置中 */
+        }
+        /* 右側縮放控制 */
+        .zoom-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            justify-content: flex-end;
+            flex: 1; /* 分配空間比例 */
+        }
+        /* 按鈕基本樣式 */
+        button {
+            padding: 5px 10px;
+            color: #e0e0e0; /* 更淺的文字顏色 */
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background-color: #797979; /* 按鈕靜止狀態的背景顏色 */
+            transition: background-color 0.2s, color 0.2s; /* 添加過渡效果 */
+        }
+        button:hover {
+            background-color: #000000; /* 懸停時更深的背景色 */
+            color: white; /* 懸停時更亮的文字 */
+        }
+        button:disabled {
+            background-color: #aaaaaa; /* 禁用按鈕顏色為淺灰色 */
+            color: #ffffff; /* 禁用狀態更淺的文字 */
+            cursor: not-allowed;
+        }
+        .container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            margin: 0;
+            padding: 0 20px 20px 20px;
+            box-sizing: border-box;
+        }
+        .sidebar {
+            width: 250px;
+            border-right: 1px solid #ddd;
+            overflow-y: auto;
+            padding: 10px;
+        }
+        .page-tree {
+            list-style-type: none;
+            padding: 0;
+        }
+        .page-tree li {
+            padding: 5px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .page-tree li:hover {
+            background-color: #f5f5f5;
+        }
+        .page-tree li.active {
+            background-color: #e0e0e0;
+            font-weight: bold;
+        }
+        .thumbnail-container {
+            width: 100%;
+            height: 150px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 5px;
+            overflow: hidden;
+            
+        }
+        .thumbnail-container canvas {
+            max-width: 100%;
+            max-height: 100%;
+        }
+        .page-number {
+            font-size: 12px;
+            color: #333;
+            margin-top: 3px;
+        }
+        .viewer-container {
+            flex: 1;
+            overflow: auto;
+            position: relative;
+        }
+        #pdf-viewer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow: auto;
+        }
+        #pdf-viewer canvas {
+            margin: 0 auto;
+            display: block;
+        }
+        /* 隱藏原始的檔案輸入框 */
+        #file-input {
+            display: none;
+        }
+        /* 自訂檔案選擇按鈕 */
+        .file-button {
+            cursor: pointer;
+            display: inline-block;
+        }
+        /* 滑鼠懸停時的圖片 */
+        .file-button img.hover-image {
+            display: none;
+        }
+        .file-button:hover img.normal-image {
+            display: none;
+        }
+        .file-button:hover img.hover-image {
+            display: inline-block;
+        }
+        .page-info {
+            margin: 0px;
+            white-space: nowrap; /* 防止文字換行 */
+            color: #333333; /* 頁碼顯示文字顏色 */
+        }
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            display: none;
+        }
+        .loading-overlay.active {
+            display: flex;
+        }
+        /* 下拉選單的樣式 */
+        .zoom-select {
+            padding: 5px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            background-color: #ffffff; /* 與按鈕相同的背景色 */
+            color: #191919; /* 淺色文字 */
+        }
+        /* 鍵盤快捷鍵提示 */
+        .shortcut-hint {
+            font-size: 0.8em;
+            color: #555;
+            margin-left: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="controls">
+            <!-- 左側的檔案選擇 -->
+            <div class="file-input">
+                <input type="file" id="file-input" accept=".pdf">
+                <label for="file-input" class="file-button">
+                    <img src="icons8-plus-50.png" alt="選擇檔案" class="normal-image">
+                    <img src="icons8-plus-50 (1).png" alt="選擇檔案" class="hover-image">
+                </label>
+            </div>
+            
+            <!-- 中間的導航區域 -->
+            <div class="navigation">
+                <button id="prev-page" disabled>⬆</button>
+                <span class="page-info">第 <span id="current-page">0</span> / <span id="total-pages">0</span> 頁
+                
+                <button id="next-page" disabled>⬇</button>
+            </div>
+            
+            <!-- 右側的縮放控制 -->
+            <div class="zoom-controls">
+                <button id="zoom-out">縮小</button>
+                <select id="zoom-select" class="zoom-select">
+                    <option value="0.5">50%</option>
+                    <option value="0.75">75%</option>
+                    <option value="1.0" selected>100%</option>
+                    <option value="2.0">200%</option>
+                </select>
+                <button id="zoom-in">放大</button>
+                <button id="fit-page">符合頁面</button>
+            </div>
+        </div>
+    </div>
+    <div class="container">
+        <div class="sidebar">
+            <h3>頁面目錄</h3>
+            <ul class="page-tree" id="page-tree"></ul>
+        </div>
+        <div class="viewer-container">
+            <div id="pdf-viewer"></div>
+            <div class="loading-overlay" id="loading-overlay">
+                <img src="icons8-loading.gif" alt="載入中...">
+            </div>
+        </div>
+    </div>
+    
+
+    <script>
+        // 指定 PDF.js 的 worker 路徑
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // 指定 CMap URL
+        const CMAP_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/';
+        const CMAP_PACKED = true;
+
+        // 初始化變數
+        let pdfDoc = null;
+        let pageNum = 1;
+        let pageRendering = false;
+        let pageNumPending = null;
+        let scale = 1.0;
+        let canvas = null;
+        let ctx = null;
+        let lastX = 0;
+        let lastY = 0;
+        let dragStart = null;
+        let viewer = document.getElementById('pdf-viewer');
+        let isDragging = false;
+        let loadingOverlay = document.getElementById('loading-overlay');
+
+        // 預設縮放比例陣列 (依序增加)
+        const scalePresets = [0.5, 0.75, 1.0, 2.0];
+
+        // 取得元素
+        const fileInput = document.getElementById('file-input');
+        const prevButton = document.getElementById('prev-page');
+        const nextButton = document.getElementById('next-page');
+        const currentPage = document.getElementById('current-page');
+        const totalPages = document.getElementById('total-pages');
+        const zoomIn = document.getElementById('zoom-in');
+        const zoomOut = document.getElementById('zoom-out');
+        const fitPage = document.getElementById('fit-page');
+        const pageTree = document.getElementById('page-tree');
+        // 縮放下拉選單元素
+        const zoomSelect = document.getElementById('zoom-select');
+
+        // 顯示載入動畫
+        function showLoading() {
+            loadingOverlay.classList.add('active');
+        }
+
+        // 隱藏載入動畫
+        function hideLoading() {
+            loadingOverlay.classList.remove('active');
+        }
+
+        // 監聽檔案選擇
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file && file.type === 'application/pdf') {
+                showLoading();
+                loadPDF(file);
+            }
+        });
+
+        // 載入PDF
+        function loadPDF(file) {
+            const fileReader = new FileReader();
+            
+            fileReader.onload = function() {
+                const typedarray = new Uint8Array(this.result);
+                
+                // 使用 PDF.js 載入 PDF，加入 CMap 配置
+                const loadingTask = pdfjsLib.getDocument({
+                    data: typedarray,
+                    cMapUrl: CMAP_URL,
+                    cMapPacked: CMAP_PACKED
+                });
+                
+                loadingTask.promise.then(function(pdf) {
+                    pdfDoc = pdf;
+                    totalPages.textContent = pdf.numPages;
+                    
+                    // 啟用按鈕
+                    prevButton.disabled = false;
+                    nextButton.disabled = false;
+                    
+                    // 載入頁面樹狀結構
+                    loadPageTree();
+                    
+                    // 渲染第一頁
+                    pageNum = 1;
+                    // 重設縮放下拉選單為 100%
+                    zoomSelect.value = "1.0";
+                    scale = 1.0;
+                    renderPage(pageNum);
+                    // 標記當前頁面
+                    updateActivePage(pageNum);
+                }).catch(function(error) {
+                    console.error('載入PDF時出錯:', error);
+                    hideLoading();
+                });
+            };
+            
+            fileReader.readAsArrayBuffer(file);
+        }
+
+        // 加載頁面樹狀結構（帶縮略圖）
+        function loadPageTree() {
+            pageTree.innerHTML = '';
+            
+            // 設置縮略圖的縮放比例
+            const thumbScale = 0.2;
+            
+            // 記錄已加載的縮略圖數量
+            let loadedThumbs = 0;
+            
+            for (let i = 1; i <= pdfDoc.numPages; i++) {
+                const li = document.createElement('li');
+                li.dataset.page = i;
+                li.id = `page-item-${i}`;
+                
+                // 創建縮略圖容器
+                const thumbContainer = document.createElement('div');
+                thumbContainer.className = 'thumbnail-container';
+                
+                // 創建頁碼標籤
+                const pageNumber = document.createElement('div');
+                pageNumber.className = 'page-number';
+                pageNumber.textContent = `第 ${i} 頁`;
+                
+                // 在縮略圖加載前顯示 GIF
+                const loadingGif = document.createElement('img');
+                loadingGif.src = "icons8-loading.gif"; // 這是你的載入 GIF 圖片
+                loadingGif.alt = "載入中...";
+                thumbContainer.appendChild(loadingGif);
+                
+                // 將容器和頁碼添加到列表項
+                li.appendChild(thumbContainer);
+                li.appendChild(pageNumber);
+                
+                // 生成縮略圖
+                generateThumbnail(i, thumbContainer, thumbScale, function() {
+                    loadedThumbs++;
+                    
+                    // 當所有縮略圖都加載完成時，隱藏加載動畫
+                    if (loadedThumbs === pdfDoc.numPages) {
+                        hideLoading();
+                    }
+                    // 隱藏 GIF
+                    loadingGif.style.display = 'none';
+                });
+                
+                // 添加點擊事件
+                li.addEventListener('click', function() {
+                    pageNum = parseInt(this.dataset.page);
+                    showLoading(); // 顯示載入動畫
+                    renderPage(pageNum);
+                    updateActivePage(pageNum);
+                });
+                
+                pageTree.appendChild(li);
+            }
+        }
+
+        // 生成縮略圖函數
+        function generateThumbnail(pageNumber, container, scale, callback) {
+            pdfDoc.getPage(pageNumber).then(function(page) {
+                const viewport = page.getViewport({ scale: scale });
+                
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                };
+                
+                page.render(renderContext).promise.then(function() {
+                    container.appendChild(canvas);
+                    if (callback) callback();
+                }).catch(function(error) {
+                    console.error(`渲染第 ${pageNumber} 頁縮略圖時出錯:`, error);
+                    if (callback) callback();
+                });
+            }).catch(function(error) {
+                console.error(`獲取第 ${pageNumber} 頁時出錯:`, error);
+                if (callback) callback();
+            });
+        }
+
+        // 更新當前活動頁面的高亮
+        function updateActivePage(num) {
+            // 移除所有頁面的活動狀態
+            const allPages = document.querySelectorAll('.page-tree li');
+            allPages.forEach(page => {
+                page.classList.remove('active');
+            });
+            
+            // 為當前頁面添加活動狀態
+            const activePage = document.getElementById(`page-item-${num}`);
+            if (activePage) {
+                activePage.classList.add('active');
+                // 確保當前頁面在視圖中可見
+                activePage.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+
+        // 渲染PDF頁面
+        function renderPage(num) {
+            pageRendering = true;
+            
+            // 獲取頁面
+            pdfDoc.getPage(num).then(function(page) {
+                // 清除上一頁
+                while (viewer.firstChild) {
+                    viewer.removeChild(viewer.firstChild);
+                }
+                
+                // 創建新的 canvas
+                canvas = document.createElement('canvas');
+                ctx = canvas.getContext('2d');
+                viewer.appendChild(canvas);
+                
+                // 設定 canvas 比例
+                const viewport = page.getViewport({ scale: scale });
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                
+                // 渲染 PDF 頁面
+                const renderContext = {
+                    canvasContext: ctx,
+                    viewport: viewport
+                };
+                
+                const renderTask = page.render(renderContext);
+                
+                // 渲染完成後
+                renderTask.promise.then(function() {
+                    pageRendering = false;
+                    
+                    // 更新頁碼
+                    currentPage.textContent = num;
+                    
+                    // 隱藏載入動畫
+                    hideLoading();
+                    
+                    // 更新當前頁面的高亮
+                    updateActivePage(num);
+                    
+                    // 如果有待處理的頁面，渲染它
+                    if (pageNumPending !== null) {
+                        showLoading(); // 顯示載入動畫
+                        renderPage(pageNumPending);
+                        pageNumPending = null;
+                    }
+                }).catch(function(error) {
+                    console.error(`渲染第 ${num} 頁時出錯:`, error);
+                    pageRendering = false;
+                    hideLoading();
+                });
+            }).catch(function(error) {
+                console.error(`獲取第 ${num} 頁時出錯:`, error);
+                pageRendering = false;
+                hideLoading();
+            });
+        }
+
+        // 顯示上一頁
+        function onPrevPage() {
+            if (pageNum <= 1) {
+                return;
+            }
+            pageNum--;
+            showLoading(); // 顯示載入動畫
+            queueRenderPage(pageNum);
+        }
+
+        // 顯示下一頁
+        function onNextPage() {
+            if (pageNum >= pdfDoc.numPages) {
+                return;
+            }
+            pageNum++;
+            showLoading(); // 顯示載入動畫
+            queueRenderPage(pageNum);
+        }
+
+        // 頁面渲染排隊
+        function queueRenderPage(num) {
+            if (pageRendering) {
+                pageNumPending = num;
+            } else {
+                renderPage(num);
+            }
+        }
+
+        // 找到下一個更高的縮放比例
+        function getNextHigherScale() {
+            const currentScaleValue = parseFloat(zoomSelect.value);
+            // 找到當前比例在預設陣列中的索引
+            const currentIndex = scalePresets.indexOf(currentScaleValue);
+            
+            // 如果是最後一個索引或找不到，則使用最後一個比例
+            if (currentIndex === -1 || currentIndex === scalePresets.length - 1) {
+                return scalePresets[scalePresets.length - 1];
+            }
+            
+            // 返回下一個更高的比例
+            return scalePresets[currentIndex + 1];
+        }
+
+        // 找到下一個更低的縮放比例
+        function getNextLowerScale() {
+            const currentScaleValue = parseFloat(zoomSelect.value);
+            // 找到當前比例在預設陣列中的索引
+            const currentIndex = scalePresets.indexOf(currentScaleValue);
+            
+            // 如果是第一個索引或找不到，則使用第一個比例
+            if (currentIndex <= 0) {
+                return scalePresets[0];
+            }
+            
+            // 返回下一個更低的比例
+            return scalePresets[currentIndex - 1];
+        }
+
+        // 放大 - 改為只能在預設比例之間切換
+        function onZoomIn() {
+            const newScale = getNextHigherScale();
+            scale = newScale;
+            zoomSelect.value = newScale.toString();
+            showLoading(); // 顯示載入動畫
+            renderPage(pageNum);
+        }
+
+        // 縮小 - 改為只能在預設比例之間切換
+        function onZoomOut() {
+            const newScale = getNextLowerScale();
+            scale = newScale;
+            zoomSelect.value = newScale.toString();
+            showLoading(); // 顯示載入動畫
+            renderPage(pageNum);
+        }
+
+        // 符合頁面 - 符合頁面後，選擇最接近的預設比例
+        function onFitPage() {
+            if (!pdfDoc) return;
+            
+            showLoading(); // 顯示載入動畫
+            
+            // 取得視圖大小
+            const viewerRect = viewer.parentElement.getBoundingClientRect();
+            const viewerWidth = viewerRect.width - 20; // 減去一些邊距
+            
+            // 獲取頁面
+            pdfDoc.getPage(pageNum).then(function(page) {
+                const viewport = page.getViewport({ scale: 1.0 });
+                
+                // 計算合適的比例
+                const newScale = viewerWidth / viewport.width;
+                
+                // 找到最接近的預設比例
+                let closestScale = scalePresets[0];
+                let minDiff = Math.abs(newScale - closestScale);
+                
+                for (let i = 1; i < scalePresets.length; i++) {
+                    const diff = Math.abs(newScale - scalePresets[i]);
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        closestScale = scalePresets[i];
+                    }
+                }
+                
+                scale = closestScale;
+                zoomSelect.value = closestScale.toString();
+                
+                renderPage(pageNum);
+            }).catch(function(error) {
+                console.error('符合頁面時出錯:', error);
+                hideLoading();
+            });
+        }
+
+        // 滑鼠拖曳功能 - 開始拖曳
+        viewer.addEventListener('mousedown', function(e) {
+            isDragging = true;
+            lastX = e.clientX;
+            lastY = e.clientY;
+            viewer.style.cursor = 'grabbing';
+        });
+
+        // 滑鼠拖曳功能 - 拖曳中
+        viewer.addEventListener('mousemove', function(e) {
+            if (!isDragging) return;
+            
+            // 計算移動距離
+            const deltaX = e.clientX - lastX;
+            const deltaY = e.clientY - lastY;
+            
+            // 移動視圖
+            viewer.parentElement.scrollLeft -= deltaX;
+            viewer.parentElement.scrollTop -= deltaY;
+            
+            // 更新最後位置
+            lastX = e.clientX;
+            lastY = e.clientY;
+        });
+
+        // 滑鼠拖曳功能 - 結束拖曳
+        viewer.addEventListener('mouseup', function() {
+            isDragging = false;
+            viewer.style.cursor = 'default';
+        });
+
+        viewer.addEventListener('mouseleave', function() {
+            isDragging = false;
+            viewer.style.cursor = 'default';
+        });
+
+        // 鍵盤快捷鍵功能
+        document.addEventListener('keydown', function(e) {
+            if (!pdfDoc) return; // 如果沒有加載PDF，則不處理快捷鍵
+            
+            if (e.key === 'ArrowUp') {
+                // 上箭頭：上一頁
+                onPrevPage();
+                e.preventDefault(); // 防止頁面滾動
+            } else if (e.key === 'ArrowDown') {
+                // 下箭頭：下一頁
+                onNextPage();
+                e.preventDefault(); // 防止頁面滾動
+            }
+        });
+
+        // 監聽縮放選單變化
+        zoomSelect.addEventListener('change', function() {
+            // 獲取選擇的縮放比例
+            scale = parseFloat(this.value);
+            showLoading(); // 顯示載入動畫
+            renderPage(pageNum);
+        });
+
+        // 綁定按鈕事件
+        prevButton.addEventListener('click', onPrevPage);
+        nextButton.addEventListener('click', onNextPage);
+        zoomIn.addEventListener('click', onZoomIn);
+        zoomOut.addEventListener('click', onZoomOut);
+        fitPage.addEventListener('click', onFitPage);
+    </script>
+</body>
+</html>

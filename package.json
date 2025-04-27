@@ -1,0 +1,15 @@
+{
+  "name": "pdf",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "jin",
+  "license": "ISC",
+  "description": "A PDF viewer built with Electron",
+  "devDependencies": {
+    "electron": "^35.2.1",
+    "electron-packager": "^17.1.2"
+  }
+}
